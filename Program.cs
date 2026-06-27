@@ -1,6 +1,6 @@
 ﻿namespace cls;
 
-enum Mode { Normal, PendingDelete, Cut, Copy }
+enum Mode { Normal, PendingDelete, Cut, Copy, Search }
 
 class Program
 {
@@ -15,6 +15,11 @@ class Program
     static bool renamingMode = false;
     static string renameBuffer = "";
     static int scrollOffset = 0;
+    static string numberBuffer = "";
+    static bool pendingG = false;
+    static string searchBuffer = "";
+    static int[] searchMatches = [];
+    static int searchMatchIndex = 0;
 
     static void Main(string[] args)
     {
@@ -57,6 +62,7 @@ class Program
             bool isCursor = i == cursor;
             bool isPending = currentMode == Mode.PendingDelete && (isSelected || (selectedLines.Count == 0 && i == pendingLine));
             bool isCutCopy = (currentMode == Mode.Cut || currentMode == Mode.Copy) && (isSelected || (selectedLines.Count == 0 && i == pendingLine));
+            bool isSearchMatch = searchMatches.Contains(i);
 
             if (isCursor)
             {
@@ -75,14 +81,28 @@ class Program
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
             }
+            else if (isSearchMatch)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+            }
 
             if (renamingMode && isCursor)
                 Console.WriteLine(("  > " + renameBuffer).PadRight(Console.WindowWidth));
             else
-                Console.WriteLine(("  " + name).PadRight(Console.WindowWidth));
+                Console.WriteLine(($"  {i + 1,3}  {name}").PadRight(Console.WindowWidth));
 
             Console.ResetColor();
         }
+
+        Console.SetCursorPosition(0, Console.WindowHeight - 1);
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        if (currentMode == Mode.Search)
+            Console.Write($"/{searchBuffer}_");
+        else if (numberBuffer.Length > 0)
+            Console.Write($":{numberBuffer}");
+        else if (pendingG)
+            Console.Write("g");
+        Console.ResetColor();
     }
 
     static void HandleKey(ConsoleKeyInfo key)
@@ -90,6 +110,12 @@ class Program
         if (renamingMode)
         {
             HandleRenameInput(key);
+            return;
+        }
+
+        if (currentMode == Mode.Search)
+        {
+            HandleSearchInput(key);
             return;
         }
 
@@ -107,7 +133,19 @@ class Program
                 break;
 
             case ConsoleKey.Enter:
-                OpenOrEnter();
+                if (numberBuffer.Length > 0)
+                {
+                    if (int.TryParse(numberBuffer, out int line))
+                    {
+                        int target = Math.Clamp(line - 1, 0, files.Length - 1);
+                        JumpTo(target);
+                    }
+                    numberBuffer = "";
+                }
+                else
+                {
+                    OpenOrEnter();
+                }
                 break;
 
             default:
@@ -119,8 +157,68 @@ class Program
     static void HandleCharKey(ConsoleKeyInfo key)
     {
         int listHeight = Console.WindowHeight - 4;
+        char c = key.KeyChar;
 
-        switch (key.KeyChar)
+        if (char.IsDigit(c) && currentMode == Mode.Normal)
+        {
+            numberBuffer += c;
+            pendingG = false;
+            return;
+        }
+
+        if (c == '/')
+        {
+            currentMode = Mode.Search;
+            searchBuffer = "";
+            searchMatches = [];
+            return;
+        }
+
+        if (c == 'n' && searchMatches.Length > 0)
+        {
+            searchMatchIndex = (searchMatchIndex + 1) % searchMatches.Length;
+            JumpTo(searchMatches[searchMatchIndex]);
+            return;
+        }
+
+        if (c == 'N' && searchMatches.Length > 0)
+        {
+            searchMatchIndex = (searchMatchIndex - 1 + searchMatches.Length) % searchMatches.Length;
+            JumpTo(searchMatches[searchMatchIndex]);
+            return;
+        }
+
+        if (c == 'g')
+        {
+            if (pendingG)
+            {
+                JumpTo(0);
+                pendingG = false;
+                numberBuffer = "";
+            }
+            else
+            {
+                pendingG = true;
+                numberBuffer = "";
+            }
+            return;
+        }
+
+        if (c == 'G')
+        {
+            if (numberBuffer.Length > 0 && int.TryParse(numberBuffer, out int line))
+                JumpTo(Math.Clamp(line - 1, 0, files.Length - 1));
+            else
+                JumpTo(files.Length - 1);
+            numberBuffer = "";
+            pendingG = false;
+            return;
+        }
+
+        pendingG = false;
+        numberBuffer = "";
+
+        switch (c)
         {
             case 'j':
                 if (cursor < files.Length - 1)
@@ -218,17 +316,14 @@ class Program
                 break;
 
             case '.':
-                if (key.KeyChar == '.')
+                var parent = Directory.GetParent(currentDir)?.FullName;
+                if (parent != null)
                 {
-                    var parent = Directory.GetParent(currentDir)?.FullName;
-                    if (parent != null)
-                    {
-                        currentDir = parent;
-                        cursor = 0;
-                        scrollOffset = 0;
-                        selectedLines.Clear();
-                        LoadFiles();
-                    }
+                    currentDir = parent;
+                    cursor = 0;
+                    scrollOffset = 0;
+                    selectedLines.Clear();
+                    LoadFiles();
                 }
                 break;
 
@@ -237,6 +332,56 @@ class Program
                 Console.Clear();
                 Environment.Exit(0);
                 break;
+        }
+    }
+
+    static void HandleSearchInput(ConsoleKeyInfo key)
+    {
+        if (key.Key == ConsoleKey.Escape)
+        {
+            currentMode = Mode.Normal;
+            searchBuffer = "";
+            searchMatches = [];
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Enter)
+        {
+            currentMode = Mode.Normal;
+            if (searchMatches.Length > 0)
+            {
+                searchMatchIndex = 0;
+                JumpTo(searchMatches[0]);
+            }
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Backspace && searchBuffer.Length > 0)
+        {
+            searchBuffer = searchBuffer[..^1];
+        }
+        else if (!char.IsControl(key.KeyChar))
+        {
+            searchBuffer += key.KeyChar;
+        }
+
+        if (searchBuffer.Length > 0)
+        {
+            searchMatches = files
+                .Select((f, i) => (name: Path.GetFileName(f.TrimEnd('/')), i))
+                .Where(x => x.name.Contains(searchBuffer, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.i)
+                .ToArray();
+
+            if (searchMatches.Length > 0)
+            {
+                searchMatchIndex = 0;
+                JumpTo(searchMatches[0]);
+            }
+        }
+        else
+        {
+            searchMatches = [];
         }
     }
 
@@ -274,6 +419,16 @@ class Program
 
         if (!char.IsControl(key.KeyChar))
             renameBuffer += key.KeyChar;
+    }
+
+    static void JumpTo(int index)
+    {
+        int listHeight = Console.WindowHeight - 4;
+        cursor = index;
+        if (cursor < scrollOffset)
+            scrollOffset = cursor;
+        else if (cursor >= scrollOffset + listHeight)
+            scrollOffset = cursor - listHeight + 1;
     }
 
     static void OpenOrEnter()
@@ -314,6 +469,10 @@ class Program
         renamingMode = false;
         renameBuffer = "";
         scrollOffset = 0;
+        numberBuffer = "";
+        pendingG = false;
+        searchBuffer = "";
+        searchMatches = [];
     }
 
     static void CopyDirectory(string src, string dest)
