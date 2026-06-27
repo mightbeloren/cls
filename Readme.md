@@ -4,7 +4,9 @@
 ## Navigation
 
 - `j/k` --- Up and Down 
-- `..` --- Parent directory
+- `.` --- Parent directory
+- `gg` --- Go to top of the list
+- `G` --- Go to bottom of the list
 - `Enter` --- open file (xdg-open file) / navigate to directory
 
 ## Selection
@@ -25,6 +27,12 @@
 
 ## Quit
 - `q` --- exit
+
+## Search
+- `/` --- Enable search mode and start typing the keywords it will highlights the matched files and click `Enter`
+- `n` --- navigate to next match 
+- `N` --- navigate to previous match
+- `Esc` --- Exit the search mode
 
 ## Escape behavior:
 
