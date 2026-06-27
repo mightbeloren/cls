@@ -14,6 +14,7 @@ class Program
     static Mode clipboardOp = Mode.Normal;
     static bool renamingMode = false;
     static string renameBuffer = "";
+    static int scrollOffset = 0;
 
     static void Main(string[] args)
     {
@@ -46,7 +47,10 @@ class Program
         Console.ResetColor();
         Console.WriteLine();
 
-        for (int i = 0; i < files.Length; i++)
+        int listHeight = Console.WindowHeight - 4;
+        int visibleEnd = Math.Min(scrollOffset + listHeight, files.Length);
+
+        for (int i = scrollOffset; i < visibleEnd; i++)
         {
             string name = Path.GetFileName(files[i].TrimEnd('/')) + (files[i].EndsWith("/") ? "/" : "");
             bool isSelected = selectedLines.Contains(i);
@@ -79,19 +83,6 @@ class Program
 
             Console.ResetColor();
         }
-
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        string status = currentMode switch
-        {
-            Mode.PendingDelete => "[d] confirm delete | [Esc] cancel",
-            Mode.Cut => "[p] paste to move | [Esc] cancel",
-            Mode.Copy => "[p] paste to copy | [Esc] cancel",
-            _ => "[j/k] move  [Tab] select  [dd] delete  [x] cut  [c] copy  [p] paste  [r] rename  [..] parent  [q] quit"
-        };
-        if (renamingMode) status = $"Rename: {renameBuffer}_ | [Enter] confirm  [Esc] cancel";
-        // Console.WriteLine(status);
-        Console.ResetColor();
     }
 
     static void HandleKey(ConsoleKeyInfo key)
@@ -127,14 +118,24 @@ class Program
 
     static void HandleCharKey(ConsoleKeyInfo key)
     {
+        int listHeight = Console.WindowHeight - 4;
+
         switch (key.KeyChar)
         {
             case 'j':
-                if (cursor < files.Length - 1) cursor++;
+                if (cursor < files.Length - 1)
+                {
+                    cursor++;
+                    if (cursor >= scrollOffset + listHeight) scrollOffset++;
+                }
                 break;
 
             case 'k':
-                if (cursor > 0) cursor--;
+                if (cursor > 0)
+                {
+                    cursor--;
+                    if (cursor < scrollOffset) scrollOffset--;
+                }
                 break;
 
             case 'd':
@@ -224,6 +225,7 @@ class Program
                     {
                         currentDir = parent;
                         cursor = 0;
+                        scrollOffset = 0;
                         selectedLines.Clear();
                         LoadFiles();
                     }
@@ -283,6 +285,7 @@ class Program
         {
             currentDir = path;
             cursor = 0;
+            scrollOffset = 0;
             selectedLines.Clear();
             currentMode = Mode.Normal;
             LoadFiles();
@@ -291,7 +294,7 @@ class Program
         {
             Console.CursorVisible = true;
             Console.Clear();
-            var p = System.Diagnostics.Process.Start("xdg-open", path);
+            System.Diagnostics.Process.Start("xdg-open", path);
             Console.CursorVisible = false;
         }
     }
@@ -310,6 +313,7 @@ class Program
         pendingLine = -1;
         renamingMode = false;
         renameBuffer = "";
+        scrollOffset = 0;
     }
 
     static void CopyDirectory(string src, string dest)
