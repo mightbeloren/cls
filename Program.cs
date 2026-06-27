@@ -86,10 +86,36 @@ class Program
                 Console.ForegroundColor = ConsoleColor.Green;
             }
 
+            string meta = "";
+            if (files[i].EndsWith("/"))
+            {
+                try
+                {
+                    int count = Directory.GetFileSystemEntries(files[i].TrimEnd('/')).Length;
+                    meta = $"{count} items";
+                }
+                catch { meta = "?"; }
+            }
+            else
+            {
+                try
+                {
+                    long bytes = new FileInfo(files[i]).Length;
+                    meta = bytes switch
+                    {
+                        < 1024 => $"{bytes}B",
+                        < 1024 * 1024 => $"{bytes / 1024}K",
+                        < 1024L * 1024 * 1024 => $"{bytes / (1024 * 1024)}M",
+                        _ => $"{bytes / (1024L * 1024 * 1024)}G"
+                    };
+                }
+                catch { meta = "?"; }
+            }
+
             if (renamingMode && isCursor)
                 Console.WriteLine(("  > " + renameBuffer).PadRight(Console.WindowWidth));
             else
-                Console.WriteLine(($"  {i + 1,3}  {name}").PadRight(Console.WindowWidth));
+                Console.WriteLine(($"  {i + 1,3}  {name,-40} {meta,8}").PadRight(Console.WindowWidth));
 
             Console.ResetColor();
         }
